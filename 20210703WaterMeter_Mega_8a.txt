@@ -1,0 +1,226 @@
+
+// Example testing sketch for various DHT humidity/temperature sensors
+// Written by ladyada, public domain
+
+
+
+
+
+
+// Uncomment whatever type you're using!
+
+
+// Connect pin 1 (on the left) of the sensor to +5V
+// NOTE: If using a board with 3.3V logic like an Arduino Due connect pin 1
+// to 3.3V instead of 5V!
+// Connect pin 2 of the sensor to whatever your DHTPIN is
+// Connect pin 4 (on the right) of the sensor to GROUND
+// Connect a 10K resistor from pin 2 (data) to pin 1 (power) of the sensor
+
+// Initialize DHT sensor.
+// Note that older versions of this library took an optional third parameter to
+// tweak the timings for faster processors.  This parameter is no longer needed
+// as the current DHT reading algorithm adjusts itself to work on faster procs.
+
+
+#include <Wire.h>
+#include <SPI.h>
+
+char dateTimeBuffer[14];
+String year1;
+String month1;
+String day1;
+String hour1;
+String minute1;
+String second1="00";
+ 
+byte inByte;
+String serialInDataString = "" ;
+String  pulseCountArrOutString = "";
+  
+int pin7 = 7;
+int pin13 = 13;
+int timerPin8 = 8;
+int relayPin50 = 50;
+int waterMeterState = HIGH;         // current state of the meter
+int lastWaterMeterState = HIGH;     // previous state of the meter
+int val = 0;
+unsigned long hourTimer,timer;
+int pulse[1500];
+bool firstTime = true;
+int pulseCount = 0;
+int pulseCountArr[200];  // pulse count array
+char charBuf[80];
+long randNumber; 
+int HOUR=0;
+int pulseCountArri = 0;
+
+void setup() {
+
+  Wire.begin();
+
+     
+  pinMode(LED_BUILTIN, OUTPUT);
+  pinMode (relayPin50, OUTPUT);
+  pinMode(pin7,INPUT_PULLUP);
+  pinMode(timerPin8,INPUT_PULLUP);
+
+  Serial.begin(9600);
+    while(!Serial){;}
+
+  Serial3.begin(9600);
+    while(!Serial3){;}
+  
+  pinMode(13,OUTPUT);
+
+  Serial.println("Uses UNO Program 20210703UnoWaterMeter_Mega_5");
+  Serial.println("Previous Program is 20210703WaterMeter_Mega_7");
+
+  Serial.println("Program is 20210703WaterMeter_Mega_8a");
+  Serial.println("sendToXbee(pulseCountArrOutString) sends a string to xbee");
+  
+  memset(pulse, 0, sizeof(pulse));
+  memset(pulseCountArr, 0, sizeof(pulseCountArr));
+
+  hourTimer=0;
+  timer = 0;
+
+} //end setup
+
+void loop() {
+  
+  //readSerial();
+
+  while(Serial.available()){
+    
+    inByte = Serial.read();
+    serialInDataString += (char)inByte;
+    
+    if(serialInDataString.endsWith("sendToXbee")){  //send to xbee
+      sendToXbee(serialInDataString);
+      serialInDataString="";
+    }
+    
+ 
+    if(serialInDataString.endsWith("rarr")){
+      read_pulseCountArr(); 
+      serialInDataString = "";
+    }
+    
+    
+ 
+  }  // while serial available end ***********************************
+
+    
+  countPulse();
+
+} // loop
+
+
+void read_pulseCountArr(){
+  String arrString="";
+
+  for(int ind = 0; ind< pulseCountArri; ind++){
+    Serial.print(ind);
+    Serial.print("  ");
+    Serial.println(pulseCountArr[ind]);
+    arrString+=String(ind);
+    arrString+='-';
+    arrString+=String(pulseCountArr[ind]);
+    arrString+=',';
+  }
+    arrString+="write";
+    Serial.println(arrString);
+    sendToXbee(arrString); 
+    arrString="";
+}
+
+void countPulse(){
+  
+  // This section counts water meter pulses
+      
+  waterMeterState = digitalRead(pin7);   // read the water meter input pin:
+ 
+  if (waterMeterState != lastWaterMeterState) {     // compare the waterMeterState to its previous state
+    delay(100);
+    pulseCount++;
+
+    lastWaterMeterState = waterMeterState;
+   
+    if (waterMeterState == HIGH) {
+      digitalWrite(LED_BUILTIN, HIGH);
+     } else {
+       digitalWrite(LED_BUILTIN, LOW);
+     }
+     delay(100);  // Delay a little bit to avoid bouncing
+  } //end waterMererState
+
+  // End section count water meter pulses
+  /******************************************************/  
+  // This section bins the pulses hourly and sends to sd card and 
+  // and xbee every 24 hours
+
+  val = digitalRead(timerPin8);    
+  if(val==LOW){
+    timer = 10000;   // 10 sec timer for testing 
+  }else
+  {
+    timer = 3600000; // hour timer
+  }
+  
+  if(millis() - hourTimer >= timer){    
+     
+    hourTimer=millis();
+      
+    pulseCountArr[pulseCountArri]=pulseCount;
+    pulseCount=0;
+     
+    pulseCountArrOutString+=String(pulseCountArri);
+    pulseCountArrOutString+='-';
+    pulseCountArrOutString+=String(pulseCountArr[pulseCountArri]);
+    pulseCountArrOutString+=',';
+    
+    pulseCountArri++;
+
+    if(pulseCountArri==24){
+      pulseCountArrOutString+="write"; //string needs to end in "write", then 
+                                       // downstream uno sends string to SD card
+      sendToXbee(pulseCountArrOutString);
+      Serial.println("");
+ 
+      pulseCountArri=0;
+      pulseCountArrOutString="";
+    }
+  } // end hour timer
+}//count pulse
+
+
+
+
+
+
+void sendToXbee(String toXbeeString){
+ 
+  char buf[1100];
+         
+  memset(buf, 'o', sizeof(buf));
+  buf[1099]='x';
+  
+  digitalWrite(relayPin50,HIGH);  // turn on xbee
+  delay(60000);  //time for xbee to connect to network
+  
+  toXbeeString.getBytes(buf, 1100);
+  for(int ind = 0;ind <= 1099;ind++){
+   Serial.print(buf[ind]);  // send to terminal for debug
+   Serial3.print(buf[ind]); // serial3 goe to xbee din
+   }
+
+   delay(60000);
+   digitalWrite(relayPin50,LOW);   // turn off xbee
+         
+
+}
+
+
+
+
